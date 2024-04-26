@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"golang.org/x/term"
-	"golang.org/x/tools/go/analysis/passes/defers"
 )
 
 func move_cursor(y int, x int) {
@@ -93,16 +92,35 @@ func (e *Editor) backspace() {
 	e.drawEditor()
 	// How to handle array out of bounds
 	e.cursor.move_cursor(cursorX-1, cursorY)
+}
 
+func (e *Editor) enter() {
+	cursorY := e.cursor.y
+	cursorX := e.cursor.x
+
+	currentLine := e.data[cursorY-1]
+
+	newLine := make([]string, len(currentLine[cursorX-1:]))
+	copy(newLine, currentLine[cursorX-1:])
+	currentLine = currentLine[:cursorX-1]
+
+	// Not sure about this
+	e.data = append(e.data[:cursorY], append([][]string{newLine}, e.data[cursorY:]...)...)
+
+	e.data[cursorY-1] = currentLine
+
+	e.drawEditor()
+
+	e.cursor.move_cursor(1, cursorY+1)
 }
 
 func (e *Editor) save() {
 	file, err := os.Create(e.filename)
-	defer file.Close()
 
 	if err != nil {
 		panic(err)
 	}
+	defer file.Close()
 
 	for _, line := range e.data {
 		file.WriteString(strings.Join(line, ""))
@@ -157,6 +175,8 @@ func main() {
 			}
 		} else if b[0] == 127 {
 			editor.backspace()
+		} else if b[0] == 13 {
+			editor.enter()
 		} else if int(b[0]) == is_ctrl('q') {
 			break
 		} else if int(b[0]) == is_ctrl('s') {
