@@ -3,15 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"golang.org/x/term"
+	"golang.org/x/tools/go/analysis/passes/defers"
 )
-
-func flush() {
-	fmt.Print("\033[H\033[2J")
-
-}
 
 func move_cursor(y int, x int) {
 	fmt.Printf("\033[%d;%dH", y, x)
@@ -23,16 +20,104 @@ type Cursor struct {
 }
 
 func (cursor *Cursor) move_cursor(x int, y int) {
-	fmt.Printf("\033[%d;%dH", y, x)
-	cursor.x = x
-	cursor.y = y
+	if y < 1 {
+		fmt.Printf("\033[%d;%dH", 1, x)
+	} else if x < 1 {
+		fmt.Printf("\033[%d;%dH", y, 1)
+	} else {
+		fmt.Printf("\033[%d;%dH", y, x)
+		cursor.x = x
+		cursor.y = y
+	}
 }
 
-func (cursor *Cursor) move_cursor_relative(x int, y int) {
+func (cursor *Cursor) move_cursor_relative(x, y int) {
 	cursor.move_cursor(cursor.x+x, cursor.y+y)
 }
 
+func is_ctrl(buf rune) int {
+	return int(buf) & 31
+}
+
+type Editor struct {
+	data     [][]string
+	cursor   Cursor
+	filename string
+}
+
+func NewEditor(filename string) *Editor {
+	cursor := Cursor{1, 1}
+	editor := Editor{
+		cursor:   cursor,
+		filename: filename,
+	}
+	editor.flush()
+	return &editor
+}
+
+func (e Editor) flush() {
+	fmt.Print("\033[H\033[2J")
+}
+
+func (e *Editor) initData(data []byte) {
+	for _, line := range strings.Split(string(data), "\n") {
+		e.data = append(e.data, strings.Split(line, ""))
+	}
+}
+
+func (e *Editor) drawEditor() {
+	e.flush()
+	for _, line := range e.data {
+		for _, c := range line {
+			fmt.Printf("%s", c)
+		}
+		fmt.Printf("\r\n")
+	}
+}
+
+func (e *Editor) writeChar(char []byte) {
+	cursorX := e.cursor.x
+	cursorY := e.cursor.y
+	line := e.data[e.cursor.y-1]
+	e.data[e.cursor.y-1] = slices.Insert(line, e.cursor.x-1, string(char))
+	e.drawEditor()
+	// How to handle array out of bounds
+	e.cursor.move_cursor(cursorX+1, cursorY)
+}
+
+func (e *Editor) backspace() {
+	cursorX := e.cursor.x
+	cursorY := e.cursor.y
+	line := e.data[e.cursor.y-1]
+	e.data[e.cursor.y-1] = slices.Delete(line, cursorX-2, cursorX-1)
+	e.drawEditor()
+	// How to handle array out of bounds
+	e.cursor.move_cursor(cursorX-1, cursorY)
+
+}
+
+func (e *Editor) save() {
+	file, err := os.Create(e.filename)
+	defer file.Close()
+
+	if err != nil {
+		panic(err)
+	}
+
+	for _, line := range e.data {
+		file.WriteString(strings.Join(line, ""))
+		file.WriteString("\n")
+	}
+}
+
 func main() {
+
+	filename := os.Args[1]
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		panic(err)
@@ -40,39 +125,44 @@ func main() {
 
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
-	flush()
+	editor := NewEditor(filename)
+	defer editor.flush()
 
-	filename := os.Args[1]
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-	cursor := Cursor{0, 0}
+	editor.initData(data)
 
-	for _, line := range strings.Split(string(data), "\n") {
-		fmt.Printf("%s\r\n", line)
-	}
-	cursor.move_cursor(0, 0)
+	editor.drawEditor()
 
-	var b []byte = make([]byte, 1)
+	editor.cursor.move_cursor(1, 1)
+
 	for {
+		var b []byte = make([]byte, 1)
 		os.Stdin.Read(b)
-		if b[0] == 113 {
-			break
-		} else if b[0] == 27 && b[1] == 91 {
-			switch b[2] {
-			case 'A':
-				cursor.move_cursor_relative(0, -1)
-			case 'B':
-				cursor.move_cursor_relative(0, 1)
-			case 'C':
-				cursor.move_cursor_relative(1, 0)
-			case 'D':
-				cursor.move_cursor_relative(-1, 0)
-			}
 
+		// handle escape char
+		if b[0] == 27 {
+			var seq []byte = make([]byte, 2)
+			os.Stdin.Read(seq)
+
+			if seq[0] == 91 {
+				switch seq[1] {
+				case 'A':
+					editor.cursor.move_cursor_relative(0, -1)
+				case 'B':
+					editor.cursor.move_cursor_relative(0, 1)
+				case 'C':
+					editor.cursor.move_cursor_relative(1, 0)
+				case 'D':
+					editor.cursor.move_cursor_relative(-1, 0)
+				}
+			}
+		} else if b[0] == 127 {
+			editor.backspace()
+		} else if int(b[0]) == is_ctrl('q') {
+			break
+		} else if int(b[0]) == is_ctrl('s') {
+			editor.save()
 		} else {
-			print(string(b[0]))
+			editor.writeChar(b)
 		}
 	}
 
