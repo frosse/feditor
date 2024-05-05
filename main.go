@@ -9,29 +9,42 @@ import (
 	"golang.org/x/term"
 )
 
-func move_cursor(y int, x int) {
-	fmt.Printf("\033[%d;%dH", y, x)
-}
-
 type Cursor struct {
 	x int
 	y int
 }
 
-func (cursor *Cursor) move_cursor(x int, y int) {
-	if y < 1 {
-		fmt.Printf("\033[%d;%dH", 1, x)
-	} else if x < 1 {
-		fmt.Printf("\033[%d;%dH", y, 1)
+func (e *Editor) move_cursor_x(amount int) {
+	newPos := e.cursor.x + amount
+	if newPos < 1 {
+		e.move_cursor_abs(1, e.cursor.y)
+	} else if newPos > len(e.data[e.cursor.y-1])+1 {
+		return
 	} else {
-		fmt.Printf("\033[%d;%dH", y, x)
-		cursor.x = x
-		cursor.y = y
+		e.move_cursor_abs(newPos, e.cursor.y)
+	}
+
+}
+func (e *Editor) move_cursor_y(amount int) {
+	newPos := e.cursor.y + amount
+	if newPos < 1 {
+		e.move_cursor_abs(e.cursor.x, 1)
+	} else if len(e.data[newPos-1]) < e.cursor.x-1 {
+		xPos := len(e.data[newPos-1]) + 1
+		e.move_cursor_abs(xPos, newPos)
+	} else {
+		e.move_cursor_abs(e.cursor.x, newPos)
 	}
 }
 
-func (cursor *Cursor) move_cursor_relative(x, y int) {
-	cursor.move_cursor(cursor.x+x, cursor.y+y)
+func (e *Editor) move_cursor_abs(x, y int) {
+	fmt.Printf("\033[%d;%dH", y, x)
+	e.cursor.x = x
+	e.cursor.y = y
+}
+
+func (e *Editor) move_cursor_relative(x, y int) {
+	e.move_cursor_abs(e.cursor.x+x, e.cursor.y+y)
 }
 
 func is_ctrl(buf rune) int {
@@ -50,7 +63,18 @@ func NewEditor(filename string) *Editor {
 		cursor:   cursor,
 		filename: filename,
 	}
+
+	data, err := os.ReadFile(filename)
+
+	if err != nil {
+		fmt.Println(err.Error())
+	}
+
 	editor.flush()
+	editor.initData(data)
+	editor.drawEditor()
+	editor.move_cursor_abs(1, 1)
+
 	return &editor
 }
 
@@ -75,23 +99,20 @@ func (e *Editor) drawEditor() {
 }
 
 func (e *Editor) writeChar(char []byte) {
-	cursorX := e.cursor.x
-	cursorY := e.cursor.y
 	line := e.data[e.cursor.y-1]
 	e.data[e.cursor.y-1] = slices.Insert(line, e.cursor.x-1, string(char))
 	e.drawEditor()
 	// How to handle array out of bounds
-	e.cursor.move_cursor(cursorX+1, cursorY)
+	e.move_cursor_x(1)
 }
 
 func (e *Editor) backspace() {
 	cursorX := e.cursor.x
-	cursorY := e.cursor.y
 	line := e.data[e.cursor.y-1]
 	e.data[e.cursor.y-1] = slices.Delete(line, cursorX-2, cursorX-1)
 	e.drawEditor()
 	// How to handle array out of bounds
-	e.cursor.move_cursor(cursorX-1, cursorY)
+	e.move_cursor_x(-1)
 }
 
 func (e *Editor) enter() {
@@ -111,7 +132,7 @@ func (e *Editor) enter() {
 
 	e.drawEditor()
 
-	e.cursor.move_cursor(1, cursorY+1)
+	e.move_cursor_abs(1, cursorY+1)
 }
 
 func (e *Editor) save() {
@@ -128,30 +149,7 @@ func (e *Editor) save() {
 	}
 }
 
-func main() {
-
-	filename := os.Args[1]
-	data, err := os.ReadFile(filename)
-	if err != nil {
-		fmt.Println(err.Error())
-	}
-
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
-	if err != nil {
-		panic(err)
-	}
-
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
-
-	editor := NewEditor(filename)
-	defer editor.flush()
-
-	editor.initData(data)
-
-	editor.drawEditor()
-
-	editor.cursor.move_cursor(1, 1)
-
+func (e *Editor) run() {
 	for {
 		var b []byte = make([]byte, 1)
 		os.Stdin.Read(b)
@@ -164,26 +162,39 @@ func main() {
 			if seq[0] == 91 {
 				switch seq[1] {
 				case 'A':
-					editor.cursor.move_cursor_relative(0, -1)
+					e.move_cursor_y(-1)
 				case 'B':
-					editor.cursor.move_cursor_relative(0, 1)
+					e.move_cursor_y(1)
 				case 'C':
-					editor.cursor.move_cursor_relative(1, 0)
+					e.move_cursor_x(1)
 				case 'D':
-					editor.cursor.move_cursor_relative(-1, 0)
+					e.move_cursor_x(-1)
 				}
 			}
 		} else if b[0] == 127 {
-			editor.backspace()
+			e.backspace()
 		} else if b[0] == 13 {
-			editor.enter()
+			e.enter()
 		} else if int(b[0]) == is_ctrl('q') {
 			break
 		} else if int(b[0]) == is_ctrl('s') {
-			editor.save()
+			e.save()
 		} else {
-			editor.writeChar(b)
+			e.writeChar(b)
 		}
 	}
+}
 
+func main() {
+	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	if err != nil {
+		panic(err)
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	filename := os.Args[1]
+	editor := NewEditor(filename)
+	defer editor.flush()
+
+	editor.run()
 }
