@@ -108,18 +108,20 @@ func (e *Editor) writeChar(char []byte) {
 func (e *Editor) backspace() {
 	cursorX := e.cursor.x
 	if cursorX <= 1 {
-		currentLine := e.data[e.cursor.y-1]
-		length := len(currentLine) + 1
-		e.data[e.cursor.y-2] = append(e.data[e.cursor.y-2], currentLine...)
-		e.data = slices.Delete(e.data, e.cursor.y-1, e.cursor.y)
-		e.drawEditor()
-		fmt.Printf("length: %d", length)
-		e.move_cursor_abs(length, e.cursor.y-1)
+		if e.cursor.y <= 1 {
+			return
+		} else {
+			currentLine := e.data[e.cursor.y-1]
+			length := len(e.data[e.cursor.y-2]) + 1
+			e.data[e.cursor.y-2] = append(e.data[e.cursor.y-2], currentLine...)
+			e.data = slices.Delete(e.data, e.cursor.y-1, e.cursor.y)
+			e.drawEditor()
+			e.move_cursor_abs(length, e.cursor.y-1)
+		}
 	} else {
 		line := e.data[e.cursor.y-1]
 		e.data[e.cursor.y-1] = slices.Delete(line, cursorX-2, cursorX-1)
 		e.drawEditor()
-		// How to handle array out of bounds
 		e.move_cursor_x(-1)
 	}
 }
