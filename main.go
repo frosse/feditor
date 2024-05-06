@@ -9,6 +9,13 @@ import (
 	"golang.org/x/term"
 )
 
+const (
+	EscapeChar = 27
+	Backspace  = 127
+	Enter      = 13
+	Tabulator  = 9
+)
+
 type Cursor struct {
 	x int
 	y int
@@ -23,8 +30,8 @@ func (e *Editor) move_cursor_x(amount int) {
 	} else {
 		e.move_cursor_abs(newPos, e.cursor.y)
 	}
-
 }
+
 func (e *Editor) move_cursor_y(amount int) {
 	newPos := e.cursor.y + amount
 	if newPos < 1 {
@@ -165,8 +172,8 @@ func (e *Editor) run() {
 		var b []byte = make([]byte, 1)
 		os.Stdin.Read(b)
 
-		// handle escape char
-		if b[0] == 27 {
+		switch b[0] {
+		case EscapeChar:
 			var seq []byte = make([]byte, 2)
 			os.Stdin.Read(seq)
 
@@ -182,15 +189,15 @@ func (e *Editor) run() {
 					e.move_cursor_x(-1)
 				}
 			}
-		} else if b[0] == 127 {
+		case Backspace:
 			e.backspace()
-		} else if b[0] == 13 {
+		case Enter:
 			e.enter()
-		} else if int(b[0]) == is_ctrl('q') {
-			break
-		} else if int(b[0]) == is_ctrl('s') {
+		case byte(is_ctrl('q')):
+			return
+		case byte(is_ctrl('s')):
 			e.save()
-		} else {
+		default:
 			e.writeChar(b)
 		}
 	}
