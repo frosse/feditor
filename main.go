@@ -36,6 +36,8 @@ func (e *Editor) move_cursor_y(amount int) {
 	newPos := e.cursor.y + amount
 	if newPos < 1 {
 		e.move_cursor_abs(e.cursor.x, 1)
+	} else if newPos == len(e.data)-1 {
+		return
 	} else if len(e.data[newPos-1]) < e.cursor.x-1 {
 		xPos := len(e.data[newPos-1]) + 1
 		e.move_cursor_abs(xPos, newPos)
