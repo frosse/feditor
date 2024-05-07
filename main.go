@@ -54,8 +54,8 @@ func (e *Editor) move_cursor_relative(x, y int) {
 	e.move_cursor_abs(e.cursor.x+x, e.cursor.y+y)
 }
 
-func is_ctrl(buf rune) int {
-	return int(buf) & 31
+func ctrl_char(buf rune) byte {
+	return uint8(buf) & 31
 }
 
 type Editor struct {
@@ -193,9 +193,9 @@ func (e *Editor) run() {
 			e.backspace()
 		case Enter:
 			e.enter()
-		case byte(is_ctrl('q')):
+		case ctrl_char('q'):
 			return
-		case byte(is_ctrl('s')):
+		case ctrl_char('s'):
 			e.save()
 		default:
 			e.writeChar(b)
